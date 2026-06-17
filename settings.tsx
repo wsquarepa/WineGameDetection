@@ -9,23 +9,31 @@ import { Button } from "@components/Button";
 import { Flex } from "@components/Flex";
 import { Paragraph } from "@components/Paragraph";
 import { Span } from "@components/Span";
-import { Margins } from "@utils/margins";
 import { OptionType } from "@utils/types";
 import { Forms, SearchableSelect, useEffect, useMemo, useState } from "@webpack/common";
 
 import { ensureCatalogLoaded, getCatalog, getGameById } from "./detectable";
 
-type ListKey = "whitelist" | "blacklist";
+type ListKey = "sharedList" | "whitelist" | "blacklist";
 
 export const settings = definePluginSettings({
     whitelistMode: {
         type: OptionType.BOOLEAN,
-        description: "Whitelist mode: report only the games on the list below. When off, every matched game is reported except those on the list (blacklist).",
+        description: "Should we instead report only the games on the list below?",
         default: false,
+    },
+    shareLists: {
+        type: OptionType.BOOLEAN,
+        description: "Should whitelist and blacklist modes share one list?",
+        default: true,
     },
     gameList: {
         type: OptionType.COMPONENT,
         component: () => <GameListSetting />,
+    },
+    sharedList: {
+        type: OptionType.CUSTOM,
+        default: [] as string[],
     },
     whitelist: {
         type: OptionType.CUSTOM,
@@ -37,12 +45,17 @@ export const settings = definePluginSettings({
     },
 });
 
-export function isReportable(id: string): boolean {
-    if (settings.store.whitelistMode) return settings.store.whitelist.includes(id);
-    return !settings.store.blacklist.includes(id);
+function activeListKey(): ListKey {
+    if (settings.store.shareLists) return "sharedList";
+    return settings.store.whitelistMode ? "whitelist" : "blacklist";
 }
 
-function useCatalog(): { ready: boolean; error: string | null; } {
+export function isReportable(id: string): boolean {
+    const list = settings.store[activeListKey()];
+    return settings.store.whitelistMode ? list.includes(id) : !list.includes(id);
+}
+
+function useCatalog(): { ready: boolean; error: string | null } {
     const [ready, setReady] = useState(getCatalog().length > 0);
     const [error, setError] = useState<string | null>(null);
 
@@ -50,9 +63,15 @@ function useCatalog(): { ready: boolean; error: string | null; } {
         if (ready) return;
         let active = true;
         ensureCatalogLoaded()
-            .then(() => { if (active) setReady(true); })
-            .catch(reason => { if (active) setError(String(reason)); });
-        return () => { active = false; };
+            .then(() => {
+                if (active) setReady(true);
+            })
+            .catch(reason => {
+                if (active) setError(String(reason));
+            });
+        return () => {
+            active = false;
+        };
     }, [ready]);
 
     return { ready, error };
@@ -69,13 +88,15 @@ function RemoveIcon() {
     );
 }
 
-function GameRow({ id, onRemove }: { id: string; onRemove(): void; }) {
+function GameRow({ id, onRemove }: { id: string; onRemove(): void }) {
     const game = getGameById(id);
 
     return (
         <Flex justifyContent="space-between" alignItems="center" style={{ gap: "1em" }}>
             <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-                <Span weight="medium" size="md">{game?.name ?? id}</Span>
+                <Span weight="medium" size="md">
+                    {game?.name ?? id}
+                </Span>
                 <Paragraph size="sm" style={{ opacity: 0.6 }}>
                     {game ? game.executables.join(", ") : "Unknown / no longer detectable"}
                 </Paragraph>
@@ -93,19 +114,25 @@ function GameRow({ id, onRemove }: { id: string; onRemove(): void; }) {
 }
 
 function GameListSetting() {
-    const { whitelistMode, whitelist, blacklist } = settings.use(["whitelistMode", "whitelist", "blacklist"]);
+    const { whitelistMode, shareLists, sharedList, whitelist, blacklist } = settings.use([
+        "whitelistMode",
+        "shareLists",
+        "sharedList",
+        "whitelist",
+        "blacklist",
+    ]);
     const { ready, error } = useCatalog();
 
-    const activeKey: ListKey = whitelistMode ? "whitelist" : "blacklist";
-    const activeList = whitelistMode ? whitelist : blacklist;
+    const activeKey: ListKey = shareLists ? "sharedList" : whitelistMode ? "whitelist" : "blacklist";
+    const activeList = shareLists ? sharedList : whitelistMode ? whitelist : blacklist;
 
     const options = useMemo(
         () => getCatalog().map(game => ({ label: game.name, value: game.id })),
-        [ready]
+        [ready],
     );
     const availableOptions = useMemo(
         () => options.filter(option => !activeList.includes(option.value)),
-        [options, activeList]
+        [options, activeList],
     );
 
     function addGame(id: string): void {
@@ -119,27 +146,24 @@ function GameListSetting() {
 
     return (
         <section>
-            <Forms.FormTitle tag="h3">{whitelistMode ? "Whitelist" : "Blacklist"}</Forms.FormTitle>
-            <Forms.FormText className={Margins.bottom8}>
-                {whitelistMode
-                    ? "Only these games are reported to Discord's native game detection."
-                    : "Every matched game is reported except these."}
-            </Forms.FormText>
+            <Forms.FormTitle tag="h3">Games List</Forms.FormTitle>
 
-            {error
-                ? <Forms.FormText style={{ color: "var(--text-feedback-critical)" }}>
+            {error ? (
+                <Forms.FormText style={{ color: "var(--text-feedback-critical)" }}>
                     Failed to load detectable games: {error}
                 </Forms.FormText>
-                : !ready
-                    ? <Forms.FormText>Loading detectable games…</Forms.FormText>
-                    : <SearchableSelect
-                        placeholder="Add a game…"
-                        options={availableOptions}
-                        value={undefined}
-                        onChange={id => addGame(id as string)}
-                        maxVisibleItems={10}
-                        closeOnSelect
-                    />}
+            ) : !ready ? (
+                <Forms.FormText>Loading detectable games…</Forms.FormText>
+            ) : (
+                <SearchableSelect
+                    placeholder="Add a game…"
+                    options={availableOptions}
+                    value={undefined}
+                    onChange={id => addGame(id as string)}
+                    maxVisibleItems={10}
+                    closeOnSelect
+                />
+            )}
 
             <Flex flexDirection="column" style={{ gap: "0.5em", marginTop: "0.5em" }}>
                 {activeList.map(id => (

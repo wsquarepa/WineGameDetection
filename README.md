@@ -19,9 +19,12 @@ them into `RunningGameStore` with their official application IDs.
 
 - `native.ts` (Node main process): fetches the detectable database from
   `https://discord.com/api/v9/applications/detectable` and reads `/proc/*/cmdline`.
-- `index.ts` (renderer): matches each Wine `.exe` against the database using
-  arRPC-style trailing-path-suffix comparison, then makes the game visible to
-  Discord's presence and session logic.
+- `detectable.ts` (renderer): indexes the database and matches each Wine `.exe`
+  against it using arRPC-style trailing-path-suffix comparison.
+- `index.ts` (renderer): scans for matches and makes them visible to Discord's
+  presence and session logic.
+- `settings.tsx` (renderer): the whitelist/blacklist settings UI and the filter
+  the scan applies.
 
 Injecting into `RunningGameStore` requires more than dispatching
 `RUNNING_GAMES_CHANGE`: Discord builds the local activity and reports game
@@ -45,3 +48,16 @@ pnpm build
 ```
 
 Then reinject Vencord into Discord. If you're not sure how, see the [Vencord docs for installing custom plugins](https://docs.vencord.dev/installing/custom-plugins/).
+
+## Configuration
+
+By default every matched Wine game is reported. Open the plugin's settings in
+Vencord to narrow that down:
+
+- **Whitelist mode** (toggle): when on, only games on the list are reported; when
+  off, every matched game is reported *except* those on the list (blacklist).
+- Use the searchable dropdown to add any detectable game to the active list. Each
+  entry shows the game name and the executable pattern it matches, plus a button
+  to remove it.
+
+Changes take effect on the next scan, within a few seconds.

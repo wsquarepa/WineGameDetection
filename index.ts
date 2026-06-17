@@ -8,18 +8,8 @@ import definePlugin, { PluginNative } from "@utils/types";
 import { findStoreLazy } from "@webpack";
 import { FluxDispatcher } from "@webpack/common";
 
-interface DetectableExecutable {
-    is_launcher: boolean;
-    name: string;
-    os: string;
-    arguments?: string;
-}
-
-interface DetectableApplication {
-    id: string;
-    name: string;
-    executables?: DetectableExecutable[];
-}
+import { DetectableGame, ensureCatalogLoaded, matchProcessPath } from "./detectable";
+import { isReportable, settings } from "./settings";
 
 interface RunningGame {
     cmdLine: string;
@@ -46,7 +36,6 @@ const RunningGameStore = findStoreLazy("RunningGameStore");
 
 type AnyFn = (...args: unknown[]) => unknown;
 
-const detectableByExecutable = new Map<string, DetectableApplication>();
 const wineGames = new Map<string, RunningGame>();
 const originalGetters = new Map<string, AnyFn>();
 let scanTimer: number | undefined;
@@ -56,45 +45,7 @@ function normalizePath(rawPath: string): string {
     return rawPath.toLowerCase().replaceAll("\\", "/");
 }
 
-// Mirrors arRPC: compare every trailing path-suffix of the process path (plus
-// 64-bit-suffix-stripped variants) against a detectable entry's executable name,
-// which may itself span several path segments.
-function pathVariants(path: string): string[] {
-    const segments = path.split("/");
-    const variants: string[] = [];
-    for (let i = 1; i < segments.length; i++) {
-        variants.push(segments.slice(-i).join("/"));
-    }
-    for (const variant of variants.slice()) {
-        variants.push(variant.replace("64", ""));
-        variants.push(variant.replace(".x64", ""));
-        variants.push(variant.replace("x64", ""));
-        variants.push(variant.replace("_64", ""));
-    }
-    return variants;
-}
-
-function indexDetectableDb(apps: DetectableApplication[]): void {
-    detectableByExecutable.clear();
-    for (const app of apps) {
-        if (!app.executables) continue;
-        for (const executable of app.executables) {
-            if (executable.is_launcher || executable.os !== "win32") continue;
-            const key = executable.name.startsWith(">") ? executable.name.substring(1) : executable.name;
-            if (!detectableByExecutable.has(key)) detectableByExecutable.set(key, app);
-        }
-    }
-}
-
-function matchApplication(variants: string[]): DetectableApplication | undefined {
-    for (const variant of variants) {
-        const app = detectableByExecutable.get(variant);
-        if (app) return app;
-    }
-    return undefined;
-}
-
-function buildRunningGame(app: DetectableApplication, pid: number, argv0: string, args: string[]): RunningGame {
+function buildRunningGame(game: DetectableGame, pid: number, argv0: string, args: string[]): RunningGame {
     const path = normalizePath(argv0);
     return {
         cmdLine: [argv0, ...args].join(" "),
@@ -102,11 +53,11 @@ function buildRunningGame(app: DetectableApplication, pid: number, argv0: string
         exePath: path,
         hidden: false,
         isLauncher: false,
-        id: app.id,
-        name: app.name,
+        id: game.id,
+        name: game.name,
         pid,
         pidPath: [pid],
-        processName: app.name,
+        processName: game.name,
         start: Date.now(),
     };
 }
@@ -192,15 +143,18 @@ async function scan(): Promise<void> {
         // Linux-native detection.
         if (!path.endsWith(".exe")) continue;
 
-        const app = matchApplication(pathVariants(path));
-        if (!app) continue;
+        const game = matchProcessPath(path);
+        // A game filtered out by the whitelist/blacklist is never added to
+        // seenIds, so if it was previously tracked the removal pass below drops
+        // it on this same scan.
+        if (!game || !isReportable(game.id)) continue;
 
-        seenIds.add(app.id);
-        if (wineGames.has(app.id)) continue;
+        seenIds.add(game.id);
+        if (wineGames.has(game.id)) continue;
 
-        const game = buildRunningGame(app, pid, argv0, args);
-        wineGames.set(app.id, game);
-        added.push(game);
+        const runningGame = buildRunningGame(game, pid, argv0, args);
+        wineGames.set(game.id, runningGame);
+        added.push(runningGame);
     }
 
     const removed: RunningGame[] = [];
@@ -230,9 +184,10 @@ export default definePlugin({
     description: "Reports Wine/Proton games to Discord's native game detection (RunningGameStore), so playtime, streaks, and quests credit them as on Windows.",
     authors: [{ name: "wsquarepa", id: 509874745567870987n }],
 
+    settings,
+
     async start() {
-        const body = await Native.fetchDetectableDb(undefined);
-        indexDetectableDb(JSON.parse(body) as DetectableApplication[]);
+        await ensureCatalogLoaded();
         installStoreOverrides();
         FluxDispatcher.subscribe("RUNNING_GAMES_CHANGE", onRunningGamesChange);
         scanTimer = window.setInterval(() => { void scan(); }, SCAN_INTERVAL_MS);
@@ -247,6 +202,5 @@ export default definePlugin({
         wineGames.clear();
         if (removed.length > 0) dispatchChange([], removed);
         removeStoreOverrides();
-        detectableByExecutable.clear();
     },
 });

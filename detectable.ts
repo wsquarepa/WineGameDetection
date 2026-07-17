@@ -36,6 +36,10 @@ function executableKey(name: string): string {
     return name.startsWith(">") ? name.substring(1) : name;
 }
 
+export function normalizePath(rawPath: string): string {
+    return rawPath.toLowerCase().replaceAll("\\", "/");
+}
+
 // Mirrors arRPC: compare every trailing path-suffix of the process path (plus
 // 64-bit-suffix-stripped variants) against a detectable entry's executable name,
 // which may itself span several path segments.

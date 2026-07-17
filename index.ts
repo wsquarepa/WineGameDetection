@@ -8,7 +8,7 @@ import definePlugin, { PluginNative } from "@utils/types";
 import { findStoreLazy } from "@webpack";
 import { FluxDispatcher } from "@webpack/common";
 
-import { DetectableGame, ensureCatalogLoaded, matchProcessPath } from "./detectable";
+import { DetectableGame, ensureCatalogLoaded, matchProcessPath, normalizePath } from "./detectable";
 import { isReportable, settings } from "./settings";
 
 interface RunningGame {
@@ -40,10 +40,6 @@ const wineGames = new Map<string, RunningGame>();
 const originalGetters = new Map<string, AnyFn>();
 let scanTimer: number | undefined;
 let selfDispatch = false;
-
-function normalizePath(rawPath: string): string {
-    return rawPath.toLowerCase().replaceAll("\\", "/");
-}
 
 function buildRunningGame(game: DetectableGame, pid: number, argv0: string, args: string[]): RunningGame {
     const path = normalizePath(argv0);

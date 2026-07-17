@@ -8,8 +8,8 @@ import definePlugin, { PluginNative } from "@utils/types";
 import { findStoreLazy } from "@webpack";
 import { FluxDispatcher } from "@webpack/common";
 
-import { DetectableGame, ensureCatalogLoaded, matchProcessPath, normalizePath } from "./detectable";
-import { isReportable, settings } from "./settings";
+import { DetectableGame, ensureCatalogLoaded, getGameById, matchProcessPath, normalizePath } from "./detectable";
+import { isReportable, matchOverride, settings } from "./settings";
 
 interface RunningGame {
     cmdLine: string;
@@ -139,7 +139,15 @@ async function scan(): Promise<void> {
         // Linux-native detection.
         if (!path.endsWith(".exe")) continue;
 
-        const game = matchProcessPath(path);
+        // DB match first; fall back to a user override keyed on the bare
+        // filename when the DB's expected parent-directory suffix does not match
+        // this install's layout.
+        let game = matchProcessPath(path);
+        if (!game) {
+            const exeName = path.split("/").at(-1);
+            const overrideId = exeName ? matchOverride(exeName) : undefined;
+            if (overrideId) game = getGameById(overrideId);
+        }
         // A game filtered out by the whitelist/blacklist is never added to
         // seenIds, so if it was previously tracked the removal pass below drops
         // it on this same scan.

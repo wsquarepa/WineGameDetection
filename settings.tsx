@@ -16,6 +16,11 @@ import { ensureCatalogLoaded, getCatalog, getGameById } from "./detectable";
 
 type ListKey = "sharedList" | "whitelist" | "blacklist";
 
+interface Override {
+    exeName: string;
+    gameId: string;
+}
+
 export const settings = definePluginSettings({
     whitelistMode: {
         type: OptionType.BOOLEAN,
@@ -43,6 +48,10 @@ export const settings = definePluginSettings({
         type: OptionType.CUSTOM,
         default: [] as string[],
     },
+    overrides: {
+        type: OptionType.CUSTOM,
+        default: [] as Override[],
+    },
 });
 
 function activeListKey(): ListKey {
@@ -53,6 +62,10 @@ function activeListKey(): ListKey {
 export function isReportable(id: string): boolean {
     const list = settings.store[activeListKey()];
     return settings.store.whitelistMode ? list.includes(id) : !list.includes(id);
+}
+
+export function matchOverride(exeName: string): string | undefined {
+    return settings.store.overrides.find(override => override.exeName === exeName)?.gameId;
 }
 
 function useCatalog(): { ready: boolean; error: string | null } {

@@ -329,7 +329,7 @@ function OverridesSetting() {
                 <Forms.FormText style={{ color: "var(--text-feedback-critical)" }}>
                     Failed to read running processes: {collectError}
                 </Forms.FormText>
-            ) : candidates.length === 0 ? (
+            ) : !loading && candidates.length === 0 ? (
                 <Forms.FormText style={{ opacity: 0.6 }}>No unmatched Wine executables running.</Forms.FormText>
             ) : (
                 <Flex flexDirection="column" style={{ gap: "0.5em" }}>

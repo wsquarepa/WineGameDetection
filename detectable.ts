@@ -31,6 +31,7 @@ const gamesByExecutable = new Map<string, DetectableGame>();
 const gamesById = new Map<string, DetectableGame>();
 let catalog: DetectableGame[] = [];
 let loaded = false;
+let loadingPromise: Promise<void> | undefined;
 
 function executableKey(name: string): string {
     return name.startsWith(">") ? name.substring(1) : name;
@@ -91,9 +92,18 @@ function indexCatalog(apps: DetectableApplication[]): void {
 
 export async function ensureCatalogLoaded(): Promise<void> {
     if (loaded) return;
-    const body = await Native.fetchDetectableDb();
-    indexCatalog(JSON.parse(body) as DetectableApplication[]);
-    loaded = true;
+    if (!loadingPromise) {
+        loadingPromise = (async () => {
+            const body = await Native.fetchDetectableDb();
+            indexCatalog(JSON.parse(body) as DetectableApplication[]);
+            loaded = true;
+        })();
+    }
+    try {
+        await loadingPromise;
+    } finally {
+        if (!loaded) loadingPromise = undefined;
+    }
 }
 
 export function getCatalog(): DetectableGame[] {

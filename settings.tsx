@@ -253,7 +253,8 @@ function OverridesSetting() {
     const { overrides } = settings.use(["overrides"]);
     const { ready, error } = useCatalog();
     const [candidates, setCandidates] = useState<Candidate[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [collectError, setCollectError] = useState<string | null>(null);
     const [nonce, setNonce] = useState(0);
 
     const options = useMemo(
@@ -262,11 +263,17 @@ function OverridesSetting() {
     );
 
     useEffect(() => {
+        if (!ready) return;
         let active = true;
         setLoading(true);
         collectCandidates(overrides)
             .then(found => {
-                if (active) setCandidates(found);
+                if (!active) return;
+                setCandidates(found);
+                setCollectError(null);
+            })
+            .catch(reason => {
+                if (active) setCollectError(String(reason));
             })
             .finally(() => {
                 if (active) setLoading(false);
@@ -274,7 +281,7 @@ function OverridesSetting() {
         return () => {
             active = false;
         };
-    }, [overrides, nonce]);
+    }, [ready, overrides, nonce]);
 
     function addOverride(exeName: string, gameId: string): void {
         if (overrides.some(override => override.exeName === exeName)) return;
@@ -318,6 +325,10 @@ function OverridesSetting() {
                 </Forms.FormText>
             ) : !ready ? (
                 <Forms.FormText>Loading detectable games…</Forms.FormText>
+            ) : collectError ? (
+                <Forms.FormText style={{ color: "var(--text-feedback-critical)" }}>
+                    Failed to read running processes: {collectError}
+                </Forms.FormText>
             ) : candidates.length === 0 ? (
                 <Forms.FormText style={{ opacity: 0.6 }}>No unmatched Wine executables running.</Forms.FormText>
             ) : (

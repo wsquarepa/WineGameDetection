@@ -262,6 +262,13 @@ function OverridesSetting() {
         [ready],
     );
 
+    // settings.use returns a fresh proxy object for `overrides` on every render
+    // (Vencord's SettingsStore re-wraps nested values per access), so depending
+    // on `overrides` directly re-runs the effect every render and loops. Depend
+    // on a value-stable key of the override set instead; candidate filtering
+    // only cares which exe names are overridden.
+    const overridesKey = overrides.map(override => override.exeName).join("\0");
+
     useEffect(() => {
         if (!ready) return;
         let active = true;
@@ -281,7 +288,7 @@ function OverridesSetting() {
         return () => {
             active = false;
         };
-    }, [ready, overrides, nonce]);
+    }, [ready, overridesKey, nonce]);
 
     function addOverride(exeName: string, gameId: string): void {
         if (overrides.some(override => override.exeName === exeName)) return;

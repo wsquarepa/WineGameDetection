@@ -74,6 +74,15 @@ export function matchOverride(exeName: string): string | undefined {
     return settings.store.overrides.find(override => override.exeName === exeName)?.gameId;
 }
 
+// Reading an element of the overrides array (via settings.store or
+// settings.use) yields a SettingsStore proxy, and Vencord persists settings
+// over Electron IPC, whose structured clone rejects proxies ("An object could
+// not be cloned"). Arrays written back must contain rebuilt plain objects,
+// never previously-read elements.
+function plainOverride(override: Override): Override {
+    return { exeName: override.exeName, gameId: override.gameId };
+}
+
 interface Candidate {
     exeName: string;
     path: string;
@@ -292,11 +301,11 @@ function OverridesSetting() {
 
     function addOverride(exeName: string, gameId: string): void {
         if (overrides.some(override => override.exeName === exeName)) return;
-        settings.store.overrides = [...overrides, { exeName, gameId }];
+        settings.store.overrides = [...overrides.map(plainOverride), { exeName, gameId }];
     }
 
     function removeOverride(exeName: string): void {
-        settings.store.overrides = overrides.filter(override => override.exeName !== exeName);
+        settings.store.overrides = overrides.filter(override => override.exeName !== exeName).map(plainOverride);
     }
 
     return (

@@ -97,7 +97,16 @@ function installStoreOverrides(): void {
 
     overrideGetter("getRunningGames", orig => () => mergeGames(orig() as RunningGame[]));
     overrideGetter("getVisibleRunningGames", orig => () => mergeGames(orig() as RunningGame[]));
-    overrideGetter("getVisibleGame", orig => () => (orig() as RunningGame | undefined) ?? [...wineGames.values()][0]);
+    overrideGetter("getVisibleGame", orig => () => {
+        // Discord's native Linux scanner reports Proton infrastructure
+        // (srt-bwrap, pressure-vessel-wrap, wine, wineserver) as id-less games
+        // the moment a Proton title launches. A native game only keeps the
+        // visible slot when it carries an application id; otherwise a matched
+        // Wine game takes precedence.
+        const nativeGame = orig() as RunningGame | undefined;
+        if (nativeGame?.id) return nativeGame;
+        return [...wineGames.values()][0] ?? nativeGame;
+    });
     overrideGetter("getRunningDiscordApplicationIds", orig => () => mergeIds(orig()));
     overrideGetter("getRunningVerifiedApplicationIds", orig => () => mergeIds(orig()));
     overrideGetter("getGameForPID", orig => (...args: unknown[]) => {

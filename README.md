@@ -3,6 +3,14 @@
 Reports Wine/Proton games to Discord's **native** game detection on Linux, so
 playtime, streaks, and quests credit them the same way they do on Windows.
 
+> [!NOTE]
+> Observed July 2026: Discord's Linux client appears to be experimenting with
+> native Wine game detection. It identified a running Wine executable on its
+> own, but only after several minutes, and it initially reported the session as
+> pressure-vessel's `srt-bwrap` wrapper. This plugin remains useful: it matches
+> games within seconds of launch, and it keeps such unidentified infrastructure
+> entries from taking the visible-game slot.
+
 ## Why
 
 Discord's Linux client only matches `os: "linux"` executables in its detectable

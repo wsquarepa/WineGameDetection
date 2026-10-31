@@ -7,10 +7,11 @@
 import { definePluginSettings } from "@api/Settings";
 import { Button } from "@components/Button";
 import { Flex } from "@components/Flex";
+import { Heading } from "@components/Heading";
 import { Paragraph } from "@components/Paragraph";
 import { Span } from "@components/Span";
 import { OptionType, PluginNative } from "@utils/types";
-import { Forms, SearchableSelect, useEffect, useMemo, useState } from "@webpack/common";
+import { SearchableSelect, useEffect, useMemo, useState } from "@webpack/common";
 
 import { ensureCatalogLoaded, getCatalog, getGameById, matchProcessPath, normalizePath } from "./detectable";
 
@@ -230,14 +231,14 @@ function GameListSetting() {
 
     return (
         <section>
-            <Forms.FormTitle tag="h3">Games List</Forms.FormTitle>
+            <Heading tag="h3">Games List</Heading>
 
             {error ? (
-                <Forms.FormText style={{ color: "var(--text-feedback-critical)" }}>
+                <Paragraph style={{ color: "var(--text-feedback-critical)" }}>
                     Failed to load detectable games: {error}
-                </Forms.FormText>
+                </Paragraph>
             ) : !ready ? (
-                <Forms.FormText>Loading detectable games…</Forms.FormText>
+                <Paragraph>Loading detectable games…</Paragraph>
             ) : (
                 <SearchableSelect
                     placeholder="Add a game…"
@@ -310,10 +311,10 @@ function OverridesSetting() {
 
     return (
         <section style={{ marginTop: "1em" }}>
-            <Forms.FormTitle tag="h3">Executable Overrides</Forms.FormTitle>
-            <Forms.FormText style={{ marginBottom: "0.5em" }}>
+            <Heading tag="h3">Executable Overrides</Heading>
+            <Paragraph style={{ marginBottom: "0.5em" }}>
                 Map a running Wine executable to a game when Discord's database does not detect it.
-            </Forms.FormText>
+            </Paragraph>
 
             <Flex flexDirection="column" style={{ gap: "0.5em" }}>
                 {overrides.map(override => (
@@ -327,26 +328,26 @@ function OverridesSetting() {
             </Flex>
 
             <Flex justifyContent="space-between" alignItems="center" style={{ marginTop: "1em", marginBottom: "0.5em" }}>
-                <Forms.FormTitle tag="h5" style={{ margin: 0 }}>
+                <Heading tag="h5" style={{ margin: 0 }}>
                     Unmatched running games
-                </Forms.FormTitle>
+                </Heading>
                 <Button size="small" variant="secondary" onClick={() => setNonce(value => value + 1)} disabled={loading}>
                     {loading ? "Refreshing…" : "Refresh"}
                 </Button>
             </Flex>
 
             {error ? (
-                <Forms.FormText style={{ color: "var(--text-feedback-critical)" }}>
+                <Paragraph style={{ color: "var(--text-feedback-critical)" }}>
                     Failed to load detectable games: {error}
-                </Forms.FormText>
+                </Paragraph>
             ) : !ready ? (
-                <Forms.FormText>Loading detectable games…</Forms.FormText>
+                <Paragraph>Loading detectable games…</Paragraph>
             ) : collectError ? (
-                <Forms.FormText style={{ color: "var(--text-feedback-critical)" }}>
+                <Paragraph style={{ color: "var(--text-feedback-critical)" }}>
                     Failed to read running processes: {collectError}
-                </Forms.FormText>
+                </Paragraph>
             ) : !loading && candidates.length === 0 ? (
-                <Forms.FormText style={{ opacity: 0.6 }}>No unmatched Wine executables running.</Forms.FormText>
+                <Paragraph style={{ opacity: 0.6 }}>No unmatched Wine executables running.</Paragraph>
             ) : (
                 <Flex flexDirection="column" style={{ gap: "0.5em" }}>
                     {candidates.map(candidate => (

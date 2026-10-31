@@ -356,9 +356,11 @@ function OverridesSetting() {
                                 <Span weight="medium" size="md">
                                     {candidate.exeName}
                                 </Span>
-                                <Paragraph size="sm" style={{ opacity: 0.6 }}>
-                                    {candidate.path}
-                                </Paragraph>
+                                {candidate.path !== candidate.exeName && (
+                                    <Paragraph size="sm" style={{ opacity: 0.6 }}>
+                                        {candidate.path}
+                                    </Paragraph>
+                                )}
                             </div>
                             <div style={{ minWidth: 220 }}>
                                 <SearchableSelect

@@ -1,51 +1,26 @@
 # WineGameDetection
 
-Reports Wine/Proton games to Discord's **native** game detection on Linux, so
-playtime, streaks, and quests credit them the same way they do on Windows.
-
-> [!NOTE]
-> Observed July 2026: Discord's Linux client appears to be experimenting with
-> native Wine game detection. It identified a running Wine executable on its
-> own, but only after several minutes, and it initially reported the session as
-> pressure-vessel's `srt-bwrap` wrapper. This plugin remains useful: it matches
-> games within seconds of launch, and it keeps such unidentified infrastructure
-> entries from taking the visible-game slot.
+Cleans up Discord's native game detection on Linux! Only games Discord can identify are reported, and Wine executables it misses can be mapped to their games. This way, your game status doesn't show some random executables :)
 
 ## Why
 
-Discord's Linux client only matches `os: "linux"` executables in its detectable
-applications database, so it never sees games running under Wine/Proton. Tools
-like arRPC/Vesktop fill the gap with the **RPC** path (`SET_ACTIVITY`), which
-shows a "Playing" status but never creates a game *session* — so streaks,
-playtime history, and PLAY_ON_DESKTOP quests stay empty.
+Although Discord's Linux client identifies Wine/Proton games on its own, its detection heuristic also reports any process it suspects is a game but cannot identify. This includes random stuff like launchers, updaters, embedded webviews, anti-cheat installers, and Proton's own infrastructure (`srt-bwrap`, `wine`, `wineserver`). These pile up in Registered Games and can take your "Playing" status away from the real game (which is really annoying D:).
 
-This plugin restores the native path: it scans `/proc` for Wine `*.exe`
-processes, matches them against Discord's live detectable database, and injects
-them into `RunningGameStore` with their official application IDs.
+Discord also misses games installed in a folder layout its database does not expect, usually caused by weird installations (due to the interesting things we have to do on Linux to get certain Windows-native games working).
 
 ## How it works
 
-- `native.ts` (Node main process): fetches the detectable database from
-  `https://discord.com/api/v9/applications/detectable` and reads `/proc/*/cmdline`.
-- `detectable.ts` (renderer): indexes the database and matches each Wine `.exe`
-  against it using arRPC-style trailing-path-suffix comparison.
-- `index.ts` (renderer): scans for matches and makes them visible to Discord's
-  presence and session logic.
-- `settings.tsx` (renderer): the whitelist/blacklist settings UI and the filter
-  the scan applies.
+The plugin hooks the point where Discord's native process scanner hands its results to `RunningGameStore`. From that list, the plugin:
 
-Injecting into `RunningGameStore` requires more than dispatching
-`RUNNING_GAMES_CHANGE`: Discord builds the local activity and reports game
-sessions from a family of selectors (`getRunningGames`, `getVisibleGame`,
-`getVisibleRunningGames`, `getRunningDiscordApplicationIds`,
-`getRunningVerifiedApplicationIds`, `getGameForPID`). The plugin wraps all of
-them so every consumer sees the Wine game, then dispatches the change to trigger
-a recompute.
+- keeps every entry Discord identified with an application ID
+- rewrites entries matching one of your overrides to carry the mapped game's ID so Discord treats them as that game everywhere
+- keeps games you added yourself with Discord's own "Add it!"
+- ...and drops everything else before any part of Discord sees it
 
 ## Installation
 
 > [!IMPORTANT]
-> This is a native plugin, so it only works on the **official Discord desktop client** — not Vesktop or the web build, neither of which can report game sessions to Discord.
+> This plugin only works on the **official Discord desktop client**. The web build (and hence Vesktop) have no game scanner to filter.
 
 Clone it into your Vencord `src/userplugins` folder and build:
 
@@ -59,13 +34,8 @@ Then reinject Vencord into Discord. If you're not sure how, see the [Vencord doc
 
 ## Configuration
 
-By default every matched Wine game is reported. Open the plugin's settings in
-Vencord to narrow that down:
+Open the plugin's settings in Vencord. **Unidentified running executables** lists what Discord detected but could not identify (and the plugin is hiding).
 
-- **Whitelist mode** (toggle): when on, only games on the list are reported; when
-  off, every matched game is reported *except* those on the list (blacklist).
-- Use the searchable dropdown to add any detectable game to the active list. Each
-  entry shows the game name and the executable pattern it matches, plus a button
-  to remove it.
+Assign a game to one to map it. The mapping is keyed on the executable's file name and should be applied within seconds. Existing mappings are listed above, each with a button to remove it.
 
-Changes take effect on the next scan, within a few seconds.
+Restart Discord after enabling the plugin for the first time.

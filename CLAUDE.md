@@ -4,15 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A **Vencord userplugin** that reports Wine/Proton games to Discord's *native* game
-detection on Linux, so playtime, streaks, and quests credit them as on Windows.
-It is not a standalone app — it has no `package.json` and is built by Vencord.
+A **Vencord userplugin** that cleans up Discord's *native* game detection on
+Linux. It is not a standalone app: it has no `package.json` and is built by
+Vencord.
 
-The native client only detects `os: "linux"` executables, so Wine `.exe`
-processes are invisible to it. RPC-based tools (arRPC/Vesktop) only set a
-"Playing" status via `SET_ACTIVITY` and never create a game *session*, so
-streaks/playtime/quests stay empty. This plugin restores the native session path
-by injecting matched Wine games into `RunningGameStore`.
+The native Linux client identifies Wine/Proton games against the detectable
+database itself, but its heuristic also reports every unidentified process it
+suspects is a game (launchers, updaters, webviews, pressure-vessel's
+`srt-bwrap`, `wine`, `wineserver`) as id-less games. Those clutter Registered
+Games and can take the "Playing" slot. Separately, an install whose folder
+layout breaks the database's path suffix (e.g. Honkai: Star Rail expects
+`games/starrail.exe`) is only ever reported as unidentified. This plugin drops
+id-less detections and lets the user map such executables to their games.
 
 ## Build / develop
 
@@ -33,81 +36,43 @@ plugin is covered by Vencord's root `tsconfig.json` and needs no config of its
 own.
 
 After building, reinject Vencord into the **official Discord desktop client**.
-This plugin cannot work on Vesktop or web — only the native client can report
-game sessions, and only the native (Node) process can read `/proc`.
+The plugin patches the native process scanner's callback, which exists only
+there, so it does nothing on Vesktop or web.
 
 ## Architecture
 
-Two execution contexts split across the Electron boundary:
+Renderer only; there is no `native.ts`.
 
-- **`native.ts`** runs in Vencord's Node main process. It owns everything that
-  needs OS access: fetching Discord's detectable-applications DB
-  (`https://discord.com/api/v9/applications/detectable`) and reading
-  `/proc/*/cmdline`. Exported functions become an IPC bridge.
-- **`index.ts`** runs in the Discord renderer. It calls the native functions via
-  `VencordNative.pluginHelpers.WineGameDetection` (typed as
-  `PluginNative<typeof import("./native")>`), runs the scan loop, and manipulates
-  `RunningGameStore`.
-- **`detectable.ts`** (renderer) owns the detectable-app catalog: it fetches the
-  DB through `native.ts`, indexes win32 non-launcher executables, and exposes
-  `matchProcessPath` (used by `index.ts`) plus `getCatalog` / `getGameById` (used
-  by the settings UI). It is a standalone module so `index.ts` and `settings.tsx`
-  can share it without an import cycle.
-- **`settings.tsx`** (renderer) defines `definePluginSettings` and the
-  whitelist/blacklist UI, and exports `isReportable`, the filter `scan()` applies.
+- **`index.ts`** holds the single webpack patch. In `RunningGameStore`'s
+  `setObservedGamesCallback` handler, the entries that survive Discord's own
+  non-game, observed-app (OBS, Spotify) and blocklist checks are assigned to the
+  store's running-games list (`e=o;` in the minified source, anchored on
+  `totalFromNative:...,entries:...}`). The patch routes that list through
+  `filterDetected`. Every consumer (`getVisibleGame`, `ActivityTrackingStore`
+  sessions, `gamesSeen` / Registered Games) derives from that internal list, so
+  filtering there is the only place that reaches all of them. Store getters and
+  the `RUNNING_GAMES_CHANGE` payload are too late: the store records
+  `gamesSeen` from its internal list, not the payload.
+- **`detection.ts`** owns `partitionDetected` (pure): keep entries with an
+  application `id`; copy entries matching a user override with that game's
+  `id`/`name`; keep id-less entries the user added through Discord's own "Add
+  it!" (`RunningGameStore.getOverrideForGame(game)?.add`); everything else is
+  unidentified. It also wraps Discord's `GameStore` (the detectable DB) and
+  holds the latest unidentified snapshot for the settings UI.
+- **`settings.tsx`** renders the override list and a picker over the
+  unidentified snapshot. Overrides are keyed on the lowercased bare exe name.
 
-### The core problem this plugin solves
+Mapping works because `GameStore.findGame` resolves an entry by `id` before
+any name or executable matching, so an id written onto a native entry makes
+Discord treat it as that game everywhere. A mapping only applies to processes
+the native scanner reports at all; anything it never reports cannot be mapped.
 
-Making a Wine game visible to Discord requires more than dispatching
-`RUNNING_GAMES_CHANGE`. Discord computes local presence and game sessions from a
-*family* of `RunningGameStore` selectors. `index.ts` monkey-patches all of them
-(`installStoreOverrides` / `overrideGetter`) so every consumer sees the Wine
-game, keeping the originals in `originalGetters` to restore on `stop()`:
-
-- `getRunningGames`, `getVisibleRunningGames` → merged game list
-- `getVisibleGame` → falls back to a Wine game
-- `getRunningDiscordApplicationIds`, `getRunningVerifiedApplicationIds` → merged IDs
-- `getGameForPID` → resolves Wine PIDs
-
-If you add or change behavior that depends on the store, account for *all* these
-selectors — patching only `getRunningGames` will silently fail to create sessions.
-
-### Matching logic
-
-In `detectable.ts`, `pathVariants` / `matchProcessPath` mirror arRPC: compare
-every trailing path-suffix of the process path (plus 64-bit-suffix-stripped
-variants) against detectable entries' executable names. `indexCatalog` only
-indexes `os === "win32"` non-launcher executables (the Windows binaries Wine
-runs); a game with no such executable can never match through Wine and is left
-out of the catalog entirely.
-
-### Settings / filtering
-
-`settings.tsx` exposes a `whitelistMode` toggle (rendered as the native
-`FormSwitch`) plus two `OptionType.CUSTOM` string-id arrays, `whitelist` and
-`blacklist`. A single `OptionType.COMPONENT` renders the searchable add-dropdown
-(populated from `getCatalog()`) and the active list's rows (game name +
-detection string + remove button), editing whichever list the mode selects.
-`scan()` gates every match through the exported `isReportable(id)`: in whitelist
-mode only listed ids pass, otherwise all matches pass except blacklisted ids. A
-game that stops being reportable is simply never re-added to `seenIds`, so the
-existing removal pass tears down its session on the next scan (≤ `SCAN_INTERVAL_MS`).
-
-### Scan + re-assert loop
-
-`scan()` runs every `SCAN_INTERVAL_MS` (5s): diff `/proc` Wine `.exe` processes
-against the tracked `wineGames` map, then dispatch added/removed. The client's
-own native scanner periodically dispatches its own `RUNNING_GAMES_CHANGE` that
-*excludes* our entries; `onRunningGamesChange` detects that and re-asserts
-missing Wine games. The `selfDispatch` flag guards against reacting to our own
-dispatch (infinite loop).
+Override and mapping changes apply on the scanner's next report (seconds). The
+patch itself needs a Discord restart after enabling the plugin.
 
 ## Conventions specific to this repo
 
-- Native (`native.ts`) exported functions take a leading `_: unknown` placeholder
-  argument — this is Vencord's `PluginNative` IPC calling convention; keep it.
-  `PluginNative` strips that leading param (it stands in for the IPC event), so
-  renderer call sites pass **no** argument for it: `Native.fetchDetectableDb()`,
-  not `Native.fetchDetectableDb(undefined)`.
-- Only `.exe` paths are bridged here; Linux-native detection is left to the
-  client's own scanner. Don't broaden this without reason.
+- Never filter or rewrite native detections anywhere other than the patched
+  callback; partial filtering desynchronizes the store's derived views.
+- Keep the patch match anchored on stable property names
+  (`totalFromNative`, `entries`) and `\i` for minified identifiers.

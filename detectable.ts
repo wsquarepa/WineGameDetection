@@ -43,11 +43,13 @@ export function normalizePath(rawPath: string): string {
 
 // Mirrors arRPC: compare every trailing path-suffix of the process path (plus
 // 64-bit-suffix-stripped variants) against a detectable entry's executable name,
-// which may itself span several path segments.
+// which may itself span several path segments. Unlike arRPC, whose Linux paths
+// are absolute (leading empty segment), Wine argv0 can be a bare filename, so
+// the whole path is itself a variant.
 function pathVariants(path: string): string[] {
     const segments = path.split("/");
     const variants: string[] = [];
-    for (let i = 1; i < segments.length; i++) {
+    for (let i = 1; i <= segments.length; i++) {
         variants.push(segments.slice(-i).join("/"));
     }
     for (const variant of variants.slice()) {
